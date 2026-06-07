@@ -1,6 +1,7 @@
 import json
 import sys
 import os
+from dataclasses import dataclass, field
 
 # Windows 下强制 stdout 使用 UTF-8，避免中文乱码
 if sys.platform == "win32":
@@ -9,7 +10,25 @@ if sys.platform == "win32":
 
 import asyncio
 import requests
-from playwright.async_api import async_playwright
+
+
+REQUEST_TIMEOUT_SECONDS = 30
+RESPONSE_BODY_LIMIT = 4096
+
+
+class ConfigError(ValueError):
+    """Raised when config.json has an invalid shape or value."""
+
+
+@dataclass
+class HttpResult:
+    url: str
+    proxies: dict
+    status_code: int | None = None
+    reason: str = ""
+    headers: dict = field(default_factory=dict)
+    body: str = ""
+    error: str | None = None
 
 
 def load_config(path="config.json"):
@@ -43,6 +62,72 @@ def _parse_proxy_url(raw, field_name="proxy.playwright.server"):
         hostname = f"[{hostname}]"
     server = urlunparse(parsed._replace(netloc=hostname + (f":{port}" if port else "")))
     return server, username, password
+
+
+def _is_positive_int(value):
+    return isinstance(value, int) and not isinstance(value, bool) and value > 0
+
+
+def validate_config(cfg):
+    if not isinstance(cfg, dict):
+        raise ConfigError("config must be a JSON object")
+
+    url = cfg.get("url")
+    if not isinstance(url, str) or not url.strip():
+        raise ConfigError("url must be a non-empty string")
+
+    proxy_cfg = cfg.get("proxy", {})
+    if proxy_cfg is None:
+        proxy_cfg = {}
+    if not isinstance(proxy_cfg, dict):
+        raise ConfigError("proxy must be an object")
+
+    for name in ("requests", "playwright"):
+        section = proxy_cfg.get(name, {})
+        if section is None:
+            section = {}
+        if not isinstance(section, dict):
+            raise ConfigError(f"proxy.{name} must be an object")
+
+        enabled = section.get("enabled", False)
+        if not isinstance(enabled, bool):
+            raise ConfigError(f"proxy.{name}.enabled must be a boolean")
+
+        server = section.get("server", "")
+        if enabled:
+            if not isinstance(server, str) or not server.strip():
+                raise ConfigError(f"proxy.{name}.server must be a non-empty string when enabled")
+            try:
+                _parse_proxy_url(server, f"proxy.{name}.server")
+            except ValueError as exc:
+                raise ConfigError(str(exc)) from exc
+
+    browser_cfg = cfg.get("browser", {})
+    if browser_cfg is None:
+        browser_cfg = {}
+    if not isinstance(browser_cfg, dict):
+        raise ConfigError("browser must be an object")
+
+    channel = browser_cfg.get("channel", "chromium")
+    if not isinstance(channel, str) or not channel.strip():
+        raise ConfigError("browser.channel must be a non-empty string")
+
+    executable_path = browser_cfg.get("executable_path", "")
+    if not isinstance(executable_path, str):
+        raise ConfigError("browser.executable_path must be a string")
+
+    for field_name in ("headless", "devtools"):
+        value = browser_cfg.get(field_name, False if field_name == "headless" else True)
+        if not isinstance(value, bool):
+            raise ConfigError(f"browser.{field_name} must be a boolean")
+
+    viewport = browser_cfg.get("viewport", {"width": 1280, "height": 720})
+    if not isinstance(viewport, dict):
+        raise ConfigError("browser.viewport must be an object")
+    for dimension in ("width", "height"):
+        value = viewport.get(dimension)
+        if not _is_positive_int(value):
+            raise ConfigError(f"browser.viewport.{dimension} must be a positive integer")
 
 
 def build_proxies(cfg):
@@ -80,38 +165,77 @@ def build_playwright_proxy(cfg):
     return result
 
 
-def http_request(url, proxies):
+def fetch_http(url, proxies, session=None, timeout=REQUEST_TIMEOUT_SECONDS):
+    owns_session = session is None
+    if session is None:
+        session = requests.Session()
+
+    try:
+        resp = session.get(url, proxies=proxies, timeout=timeout)
+    except requests.RequestException as e:
+        return HttpResult(url=url, proxies=dict(proxies), error=str(e))
+    finally:
+        if owns_session:
+            session.close()
+
+    return HttpResult(
+        url=url,
+        proxies=dict(proxies),
+        status_code=resp.status_code,
+        reason=resp.reason,
+        headers=dict(resp.headers),
+        body=resp.text,
+    )
+
+
+def _truncate(text, limit=RESPONSE_BODY_LIMIT):
+    if len(text) <= limit:
+        return text
+    return text[:limit] + "\n... [truncated]"
+
+
+def print_http_result(result):
     """
-    使用 requests 发起 GET 请求，打印响应头和响应体。
+    打印 requests 请求结果。
     """
     print("=" * 60)
     print("HTTP Request via requests")
     print("=" * 60)
-    print(f"URL : {url}")
-    print(f"Proxy: {proxies if proxies else 'None (direct)'}")
+    print(f"URL : {result.url}")
+    print(f"Proxy: {result.proxies if result.proxies else 'None (direct)'}")
     print()
 
-    try:
-        resp = requests.get(url, proxies=proxies, timeout=30)
-    except requests.RequestException as e:
-        print(f"请求失败: {e}")
+    if result.error:
+        print(f"请求失败: {result.error}")
         return
 
-    print(f"Status: {resp.status_code} {resp.reason}")
+    print(f"Status: {result.status_code} {result.reason}")
     print()
     print("--- Response Headers ---")
-    for k, v in resp.headers.items():
+    for k, v in result.headers.items():
         print(f"  {k}: {v}")
 
     print()
-    print("--- Response Body (truncated to 4096 chars) ---")
-    text = resp.text
-    if len(text) > 4096:
-        text = text[:4096] + "\n... [truncated]"
-    print(text)
+    print(f"--- Response Body (truncated to {RESPONSE_BODY_LIMIT} chars) ---")
+    print(_truncate(result.body))
 
 
-async def playwright_browser(url, cfg, browser_cfg):
+def http_request(url, proxies):
+    """
+    使用 requests 发起 GET 请求，打印响应头和响应体。
+    """
+    result = fetch_http(url, proxies)
+    print_http_result(result)
+    return result
+
+
+async def playwright_browser(
+    url,
+    cfg,
+    browser_cfg,
+    playwright_context_factory=None,
+    wait_for_input=input,
+):
     """
     使用 Playwright 打开浏览器，可选开启开发者工具，访问指定 URL。
     """
@@ -135,7 +259,15 @@ async def playwright_browser(url, cfg, browser_cfg):
     print(f"Proxy    : {proxy['server'] if proxy else 'None (direct)'}")
     print()
 
-    async with async_playwright() as pw:
+    if playwright_context_factory is None:
+        from playwright.async_api import async_playwright
+
+        playwright_context_factory = async_playwright
+
+    browser = None
+    context = None
+
+    async with playwright_context_factory() as pw:
         bundled = {
             "chromium": pw.chromium,
             "firefox": pw.firefox,
@@ -158,39 +290,43 @@ async def playwright_browser(url, cfg, browser_cfg):
         if devtools and (channel in system_channels or channel == "chromium"):
             launch_args.append("--auto-open-devtools-for-tabs")
 
-        browser = await browser_type.launch(
-            headless=headless,
-            executable_path=executable_path or None,
-            channel=channel if (not executable_path and channel in system_channels) else None,
-            args=launch_args,
-        )
+        try:
+            browser = await browser_type.launch(
+                headless=headless,
+                executable_path=executable_path or None,
+                channel=channel if (not executable_path and channel in system_channels) else None,
+                args=launch_args,
+            )
 
-        context_kwargs = {"viewport": viewport}
-        if proxy:
-            context_kwargs["proxy"] = proxy
+            context_kwargs = {"viewport": viewport}
+            if proxy:
+                context_kwargs["proxy"] = proxy
 
-        context = await browser.new_context(**context_kwargs)
-        page = await context.new_page()
+            context = await browser.new_context(**context_kwargs)
+            page = await context.new_page()
 
-        # DevTools 需要时间初始化，先空白页让面板就绪，再导航
-        if devtools and channel in system_channels | {"chromium"}:
-            await asyncio.sleep(1.5)
+            # DevTools 需要时间初始化，先空白页让面板就绪，再导航
+            if devtools and channel in system_channels | {"chromium"}:
+                await asyncio.sleep(1.5)
 
-        print("正在打开页面，请查看浏览器窗口...")
-        await page.goto(url, wait_until="load", timeout=60000)
+            print("正在打开页面，请查看浏览器窗口...")
+            await page.goto(url, wait_until="load", timeout=60000)
 
-        print(f"当前页面标题: {await page.title()}")
-        print(f"当前 URL     : {page.url}")
-        print()
-        print("按 Enter 键关闭浏览器并退出...")
-        input()
-
-        await context.close()
-        await browser.close()
+            print(f"当前页面标题: {await page.title()}")
+            print(f"当前 URL     : {page.url}")
+            print()
+            print("按 Enter 键关闭浏览器并退出...")
+            await asyncio.to_thread(wait_for_input)
+        finally:
+            if context is not None:
+                await context.close()
+            if browser is not None:
+                await browser.close()
 
 
 async def main():
     cfg = load_config()
+    validate_config(cfg)
     url = cfg["url"]
     browser_cfg = cfg.get("browser", {})
 
@@ -203,4 +339,8 @@ async def main():
 
 
 if __name__ == "__main__":
-    asyncio.run(main())
+    try:
+        asyncio.run(main())
+    except ConfigError as exc:
+        print(f"配置错误: {exc}", file=sys.stderr)
+        raise SystemExit(2)
