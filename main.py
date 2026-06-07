@@ -17,17 +17,31 @@ def load_config(path="config.json"):
         return json.load(f)
 
 
-def _parse_proxy_url(raw):
+def _parse_proxy_url(raw, field_name="proxy.playwright.server"):
     """
     从代理 URL 中拆出 (server, username, password)。
     支持 socks5://user:pass@host:port 或 http://host:port 等格式。
     """
     from urllib.parse import urlparse, urlunparse
     parsed = urlparse(raw)
+    if not parsed.scheme or not parsed.hostname:
+        raise ValueError(
+            f"{field_name} must include a URL scheme and hostname, "
+            "for example socks5://127.0.0.1:1080"
+        )
+
+    try:
+        port = parsed.port
+    except ValueError as exc:
+        raise ValueError(f"{field_name} has an invalid port") from exc
+
     username = parsed.username or ""
     password = parsed.password or ""
     # 剔除 userinfo 后的纯 server 地址
-    server = urlunparse(parsed._replace(netloc=parsed.hostname + (f":{parsed.port}" if parsed.port else "")))
+    hostname = parsed.hostname
+    if ":" in hostname and not hostname.startswith("["):
+        hostname = f"[{hostname}]"
+    server = urlunparse(parsed._replace(netloc=hostname + (f":{port}" if port else "")))
     return server, username, password
 
 
@@ -58,7 +72,7 @@ def build_playwright_proxy(cfg):
     raw = p.get("server")
     if not raw:
         return None
-    server, username, password = _parse_proxy_url(raw)
+    server, username, password = _parse_proxy_url(raw, "proxy.playwright.server")
     result = {"server": server}
     if username:
         result["username"] = username
