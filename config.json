@@ -1,0 +1,23 @@
+{
+    "url": "https://httpbin.org/ip",
+    "proxy": {
+        "requests": {
+            "enabled": false,
+            "server": "http://127.0.0.1:8080"
+        },
+        "playwright": {
+            "enabled": false,
+            "server": "socks5://127.0.0.1:1080"
+        }
+    },
+    "browser": {
+        "channel": "chromium",
+        "executable_path": "",
+        "headless": false,
+        "devtools": true,
+        "viewport": {
+            "width": 1280,
+            "height": 720
+        }
+    }
+}
