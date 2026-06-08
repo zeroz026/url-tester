@@ -29,6 +29,7 @@ temp/
 .env
 .env.*
 !.env.example
+config.json
 
 # IDE and OS metadata
 .idea/

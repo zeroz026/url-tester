@@ -32,6 +32,14 @@ class HttpResult:
 
 
 def load_config(path="config.json"):
+    if not os.path.exists(path):
+        example = path + ".example"
+        if os.path.exists(example):
+            import shutil
+            shutil.copy(example, path)
+            print(f"[init] 已从 {example} 复制默认配置到 {path}，请按需修改后重新运行")
+            raise SystemExit(0)
+        raise FileNotFoundError(f"配置文件 {path} 不存在，且未找到示例配置 {example}")
     with open(path, "r", encoding="utf-8") as f:
         return json.load(f)
 
