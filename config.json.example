@@ -1,18 +1,16 @@
 {
     "requests": {
         "enabled": true,
-        "url": "https://httpbin.org/ip"
+        "url": "https://httpbin.org/ip",
+        "proxy": {
+            "enabled": false,
+            "server": "http://127.0.0.1:8080"
+        }
     },
     "playwright": {
         "enabled": true,
-        "url": "https://httpbin.org/headers"
-    },
-    "proxy": {
-        "requests": {
-            "enabled": false,
-            "server": "http://127.0.0.1:8080"
-        },
-        "playwright": {
+        "url": "https://httpbin.org/headers",
+        "proxy": {
             "enabled": false,
             "server": "socks5://127.0.0.1:1080"
         }

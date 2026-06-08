@@ -44,7 +44,7 @@ def load_config(path="config.json"):
         return json.load(f)
 
 
-def _parse_proxy_url(raw, field_name="proxy.playwright.server"):
+def _parse_proxy_url(raw, field_name="playwright.proxy.server"):
     """
     从代理 URL 中拆出 (server, username, password)。
     支持 socks5://user:pass@host:port 或 http://host:port 等格式。
@@ -96,29 +96,22 @@ def validate_config(cfg):
             if not isinstance(url, str) or not url.strip():
                 raise ConfigError(f"{section_name}.url must be a non-empty string when enabled")
 
-    proxy_cfg = cfg.get("proxy", {})
-    if proxy_cfg is None:
-        proxy_cfg = {}
-    if not isinstance(proxy_cfg, dict):
-        raise ConfigError("proxy must be an object")
+        proxy = section.get("proxy", {})
+        if proxy is None:
+            proxy = {}
+        if not isinstance(proxy, dict):
+            raise ConfigError(f"{section_name}.proxy must be an object")
 
-    for name in ("requests", "playwright"):
-        section = proxy_cfg.get(name, {})
-        if section is None:
-            section = {}
-        if not isinstance(section, dict):
-            raise ConfigError(f"proxy.{name} must be an object")
+        proxy_enabled = proxy.get("enabled", False)
+        if not isinstance(proxy_enabled, bool):
+            raise ConfigError(f"{section_name}.proxy.enabled must be a boolean")
 
-        enabled = section.get("enabled", False)
-        if not isinstance(enabled, bool):
-            raise ConfigError(f"proxy.{name}.enabled must be a boolean")
-
-        server = section.get("server", "")
-        if enabled:
+        server = proxy.get("server", "")
+        if proxy_enabled:
             if not isinstance(server, str) or not server.strip():
-                raise ConfigError(f"proxy.{name}.server must be a non-empty string when enabled")
+                raise ConfigError(f"{section_name}.proxy.server must be a non-empty string when enabled")
             try:
-                _parse_proxy_url(server, f"proxy.{name}.server")
+                _parse_proxy_url(server, f"{section_name}.proxy.server")
             except ValueError as exc:
                 raise ConfigError(str(exc)) from exc
 
@@ -161,11 +154,11 @@ def validate_config(cfg):
 
 def build_proxies(cfg):
     """
-    从 cfg["proxy"]["requests"] 构造 requests 库的 proxies 字典。
+    从 cfg["requests"]["proxy"] 构造 requests 库的 proxies 字典。
     server 可以是 http:// https:// socks5:// 等任意协议。
     socks5 需要 pip install 'requests[socks]'。
     """
-    p = cfg.get("proxy", {}).get("requests", {})
+    p = cfg.get("requests", {}).get("proxy", {})
     if not p.get("enabled"):
         return {}
     server = p.get("server")
@@ -176,17 +169,17 @@ def build_proxies(cfg):
 
 def build_playwright_proxy(cfg):
     """
-    从 cfg["proxy"]["playwright"] 构造 Playwright 的 proxy 字典。
+    从 cfg["playwright"]["proxy"] 构造 Playwright 的 proxy 字典。
     server 可以是 http:// https:// socks5:// 等任意协议。
     认证信息从 URL 中解析，拆为 server / username / password 独立字段。
     """
-    p = cfg.get("proxy", {}).get("playwright", {})
+    p = cfg.get("playwright", {}).get("proxy", {})
     if not p.get("enabled"):
         return None
     raw = p.get("server")
     if not raw:
         return None
-    server, username, password = _parse_proxy_url(raw, "proxy.playwright.server")
+    server, username, password = _parse_proxy_url(raw, "playwright.proxy.server")
     result = {"server": server}
     if username:
         result["username"] = username

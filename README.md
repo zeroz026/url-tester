@@ -33,10 +33,10 @@ playwright install chromium
 | `requests.url` | HTTP 请求目标 URL |
 | `playwright.enabled` | 是否执行 Playwright 浏览器步骤 (true/false) |
 | `playwright.url` | Playwright 浏览器目标 URL |
-| `proxy.requests.enabled` | 是否为 `requests` 请求启用代理 (true/false) |
-| `proxy.requests.server` | `requests` 代理地址，例如 `http://127.0.0.1:8080` 或 `socks5://127.0.0.1:1080` |
-| `proxy.playwright.enabled` | 是否为 Playwright 浏览器启用代理 (true/false) |
-| `proxy.playwright.server` | Playwright 代理地址，必须包含协议和主机，例如 `socks5://127.0.0.1:1080` |
+| `requests.proxy.enabled` | 是否为 HTTP 请求启用代理 (true/false) |
+| `requests.proxy.server` | HTTP 请求代理地址，例如 `http://127.0.0.1:8080` 或 `socks5://127.0.0.1:1080` |
+| `playwright.proxy.enabled` | 是否为 Playwright 浏览器启用代理 (true/false) |
+| `playwright.proxy.server` | Playwright 代理地址，必须包含协议和主机，例如 `socks5://127.0.0.1:1080` |
 | `browser.channel` | 浏览器: `chromium` / `chrome` / `chrome-beta` / `msedge` / `firefox` / `webkit` 等 |
 | `browser.executable_path` | 浏览器可执行文件全路径，优先级高于 channel (为空则忽略) |
 | `browser.headless` | 无头模式 (true/false) |

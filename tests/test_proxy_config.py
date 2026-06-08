@@ -17,8 +17,8 @@ from main import (
 class ProxyConfigTests(unittest.TestCase):
     def test_build_proxies_uses_requests_proxy_server(self):
         cfg = {
-            "proxy": {
-                "requests": {
+            "requests": {
+                "proxy": {
                     "enabled": True,
                     "server": "socks5://127.0.0.1:1080",
                 }
@@ -35,8 +35,8 @@ class ProxyConfigTests(unittest.TestCase):
 
     def test_build_playwright_proxy_strips_url_credentials(self):
         cfg = {
-            "proxy": {
-                "playwright": {
+            "playwright": {
+                "proxy": {
                     "enabled": True,
                     "server": "socks5://user:pass@127.0.0.1:1080",
                 }
@@ -54,8 +54,8 @@ class ProxyConfigTests(unittest.TestCase):
 
     def test_build_playwright_proxy_rejects_server_without_scheme(self):
         cfg = {
-            "proxy": {
-                "playwright": {
+            "playwright": {
+                "proxy": {
                     "enabled": True,
                     "server": "127.0.0.1:1080",
                 }
@@ -64,7 +64,7 @@ class ProxyConfigTests(unittest.TestCase):
 
         with self.assertRaisesRegex(
             ValueError,
-            "proxy.playwright.server must include a URL scheme and hostname",
+            "playwright.proxy.server must include a URL scheme and hostname",
         ):
             build_playwright_proxy(cfg)
 
