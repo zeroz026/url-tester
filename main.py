@@ -335,32 +335,140 @@ async def playwright_browser(
                 "--disable-component-extensions-with-background-pages",
             ])
 
+        context_kwargs = {}
+        if viewport:
+            context_kwargs["viewport"] = viewport
+        if proxy:
+            context_kwargs["proxy"] = proxy
+        if locale:
+            context_kwargs["locale"] = locale
+        if timezone_id:
+            context_kwargs["timezone_id"] = timezone_id
+
         try:
-            browser = await browser_type.launch(
-                headless=headless,
-                executable_path=executable_path or None,
-                channel=channel if (not executable_path and channel in system_channels) else None,
-                args=launch_args,
-            )
-
-            context_kwargs = {}
-            if viewport:
-                context_kwargs["viewport"] = viewport
-            if proxy:
-                context_kwargs["proxy"] = proxy
-
             if stealth_enabled:
-                if locale:
-                    context_kwargs["locale"] = locale
-                if timezone_id:
-                    context_kwargs["timezone_id"] = timezone_id
-
-            context = await browser.new_context(**context_kwargs)
-
-            if stealth_enabled:
+                import tempfile, re
                 from playwright_stealth import Stealth
-                stealth_agent = Stealth()
+
+                # 先启动一个临时 browser 获取真实 UA，然后关掉
+                temp_browser = await browser_type.launch(
+                    headless=True,
+                    executable_path=executable_path or None,
+                    channel=channel if (not executable_path and channel in system_channels) else None,
+                )
+                temp_page = await temp_browser.new_page()
+                raw_ua = await temp_page.evaluate("navigator.userAgent")
+                # 获取 Chrome 主版本号用于 Sec-CH-UA
+                ua_version = "134"
+                m = re.search(r"Chrome/(\d+)", raw_ua)
+                if m:
+                    ua_version = m.group(1)
+                await temp_browser.close()
+
+                # 移除 HeadlessChrome 标记，并换为 Windows 平台
+                real_ua = raw_ua.replace("HeadlessChrome", "Chrome")
+                real_ua = re.sub(r"\(X11; Linux [^)]+\)", "(Windows NT 10.0; Win64; x64)", real_ua)
+
+                # Sec-CH-UA 与 UA 版本对齐（Google Chrome 必须排第一，匹配真实 Chrome）
+                sec_ch_ua = (
+                    f'"Google Chrome";v="{ua_version}", '
+                    f'"Chromium";v="{ua_version}", '
+                    f'"Not/A)Brand";v="99"'
+                )
+
+                lang_override = (locale,) if locale else ("en-US",)
+                stealth_agent = Stealth(
+                    navigator_languages_override=lang_override,
+                    navigator_vendor_override="Google Inc.",
+                    navigator_user_agent_override=real_ua,
+                    sec_ch_ua_override=sec_ch_ua,
+                )
+
+                context_kwargs["user_agent"] = real_ua
+                context_kwargs["extra_http_headers"] = {"sec-ch-ua": sec_ch_ua}
+
+                # 持久化 context 解决隐身模式检测
+                user_data_dir = browser_cfg.get("user_data_dir", "") or os.path.join(
+                    tempfile.gettempdir(), "playwright_stealth_profile"
+                )
+                context = await browser_type.launch_persistent_context(
+                    user_data_dir=user_data_dir,
+                    headless=headless,
+                    executable_path=executable_path or None,
+                    channel=channel if (not executable_path and channel in system_channels) else None,
+                    args=launch_args,
+                    **context_kwargs,
+                )
+                browser = None
                 await stealth_agent.apply_stealth_async(context)
+
+                # navigator.language (单数) 与 navigator.languages[0] 对齐
+                # navigator.userAgentData: 修复 Chromium 147+ 的 brands
+                # (新版本已经没有 HeadlessChrome 了，stealth JS 的替换逻辑失效)
+                await context.add_init_script(f"""
+                    (() => {{
+                        const uaFullVersion = '{ua_version}.0.7727.0';
+                        const uaVersion = '{ua_version}';
+                        const chromeBrands = [
+                            {{ brand: 'Google Chrome', version: uaVersion }},
+                            {{ brand: 'Chromium', version: uaVersion }},
+                            {{ brand: 'Not/A)Brand', version: '99' }},
+                        ];
+                        const chromeFullVersionList = [
+                            {{ brand: 'Google Chrome', version: uaFullVersion }},
+                            {{ brand: 'Chromium', version: uaFullVersion }},
+                            {{ brand: 'Not/A)Brand', version: '99.0.0.0' }},
+                        ];
+
+                        Object.defineProperty(navigator, 'userAgentData', {{
+                            get: () => ({{
+                                brands: chromeBrands,
+                                mobile: false,
+                                platform: 'Windows',
+                                getHighEntropyValues: (hints) => {{
+                                    const result = {{
+                                        brands: chromeBrands,
+                                        mobile: false,
+                                        platform: 'Windows',
+                                    }};
+                                    if (hints.includes('fullVersionList')) {{
+                                        result.fullVersionList = chromeFullVersionList;
+                                    }}
+                                    if (hints.includes('uaFullVersion')) {{
+                                        result.uaFullVersion = uaFullVersion;
+                                    }}
+                                    if (hints.includes('platformVersion')) {{
+                                        result.platformVersion = '10.0.0';
+                                    }}
+                                    if (hints.includes('model')) {{
+                                        result.model = '';
+                                    }}
+                                    return Promise.resolve(result);
+                                }},
+                                toJSON: () => ({{
+                                    brands: chromeBrands,
+                                    mobile: false,
+                                    platform: 'Windows',
+                                }}),
+                            }}),
+                            configurable: true,
+                            enumerable: true,
+                        }});
+
+                        // navigator.language 单数对齐
+                        Object.defineProperty(navigator, 'language', {{
+                            get: () => '{lang_override[0]}'
+                        }});
+                    }})();
+                """)
+            else:
+                browser = await browser_type.launch(
+                    headless=headless,
+                    executable_path=executable_path or None,
+                    channel=channel if (not executable_path and channel in system_channels) else None,
+                    args=launch_args,
+                )
+                context = await browser.new_context(**context_kwargs)
 
             page = await context.new_page()
 
@@ -412,7 +520,7 @@ async def playwright_browser(
                 for i in range(refresh_test_count):
                     t0 = time.monotonic()
                     try:
-                        await page.reload(wait_until="load", timeout=15000)
+                        await page.reload(wait_until="load", timeout=30000)
                         # 尽力等 networkidle，超时不报错，interval 兜底
                         try:
                             await page.wait_for_load_state("networkidle", timeout=2_000)
