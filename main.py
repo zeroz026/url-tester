@@ -119,6 +119,10 @@ def validate_config(cfg):
         if not isinstance(refresh_test_count, int) or isinstance(refresh_test_count, bool) or refresh_test_count < 0:
             raise ConfigError(f"{section_name}.refresh_test_count must be a non-negative integer")
 
+        refresh_interval_seconds = section.get("refresh_interval_seconds", 0.5)
+        if not isinstance(refresh_interval_seconds, (int, float)) or isinstance(refresh_interval_seconds, bool) or refresh_interval_seconds < 0:
+            raise ConfigError(f"{section_name}.refresh_interval_seconds must be a non-negative number")
+
     browser_cfg = cfg.get("browser", {})
     if browser_cfg is None:
         browser_cfg = {}
@@ -362,7 +366,7 @@ async def playwright_browser(
                 await asyncio.sleep(1.5)
 
             print("正在打开页面，请查看浏览器窗口...")
-            await page.goto(url, wait_until="load", timeout=60000)
+            await page.goto(url, wait_until="networkidle", timeout=60000)
 
             print(f"当前页面标题: {await page.title()}")
             print(f"当前 URL     : {page.url}")
@@ -389,18 +393,26 @@ async def playwright_browser(
             refresh_test_count = cfg.get("playwright", {}).get("refresh_test_count", 0)
             if refresh_test_count > 0:
                 import time
-                print(f"--- Proxy Refresh Test ({refresh_test_count}x) ---")
+                refresh_interval = cfg.get("playwright", {}).get("refresh_interval_seconds", 0.5)
+                print(f"--- Proxy Refresh Test ({refresh_test_count}x, interval {refresh_interval}s) ---")
+
+                # 等待页面完全渲染后再开始刷新
+                await asyncio.sleep(refresh_interval)
+
                 refresh_times = []
                 for i in range(refresh_test_count):
                     t0 = time.monotonic()
                     try:
-                        await page.reload(wait_until="load", timeout=15000)
+                        await page.reload(wait_until="networkidle", timeout=15000)
                         elapsed = time.monotonic() - t0
                         refresh_times.append(elapsed)
                         print(f"  [{i+1:2d}] OK  {elapsed:.2f}s")
                     except Exception as e:
                         elapsed = time.monotonic() - t0
                         print(f"  [{i+1:2d}] FAIL after {elapsed:.2f}s: {e}")
+                    # 等待页面完全渲染后再进行下一次刷新
+                    if i < refresh_test_count - 1:
+                        await asyncio.sleep(refresh_interval)
                 if refresh_times:
                     avg = sum(refresh_times) / len(refresh_times)
                     print(f"  avg: {avg:.2f}s  min: {min(refresh_times):.2f}s  max: {max(refresh_times):.2f}s  success: {len(refresh_times)}/{refresh_test_count}")
