@@ -11,7 +11,7 @@
         "enabled": true,
         "url": "https://httpbin.org/headers",
         "refresh_test_count": 0,
-        "refresh_interval_seconds": 0.5,
+        "refresh_interval_seconds": 1.0,
         "proxy": {
             "enabled": false,
             "server": "socks5://127.0.0.1:1080"

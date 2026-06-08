@@ -119,7 +119,7 @@ def validate_config(cfg):
         if not isinstance(refresh_test_count, int) or isinstance(refresh_test_count, bool) or refresh_test_count < 0:
             raise ConfigError(f"{section_name}.refresh_test_count must be a non-negative integer")
 
-        refresh_interval_seconds = section.get("refresh_interval_seconds", 0.5)
+        refresh_interval_seconds = section.get("refresh_interval_seconds", 1.0)
         if not isinstance(refresh_interval_seconds, (int, float)) or isinstance(refresh_interval_seconds, bool) or refresh_interval_seconds < 0:
             raise ConfigError(f"{section_name}.refresh_interval_seconds must be a non-negative number")
 
@@ -366,7 +366,13 @@ async def playwright_browser(
                 await asyncio.sleep(1.5)
 
             print("正在打开页面，请查看浏览器窗口...")
-            await page.goto(url, wait_until="networkidle", timeout=60000)
+            await page.goto(url, wait_until="load", timeout=60000)
+
+            # 尽力等 networkidle（动态内容），超时也不报错，后面还有 interval 兜底
+            try:
+                await page.wait_for_load_state("networkidle", timeout=2_000)
+            except Exception:
+                pass
 
             print(f"当前页面标题: {await page.title()}")
             print(f"当前 URL     : {page.url}")
@@ -393,7 +399,7 @@ async def playwright_browser(
             refresh_test_count = cfg.get("playwright", {}).get("refresh_test_count", 0)
             if refresh_test_count > 0:
                 import time
-                refresh_interval = cfg.get("playwright", {}).get("refresh_interval_seconds", 0.5)
+                refresh_interval = cfg.get("playwright", {}).get("refresh_interval_seconds", 1.0)
                 print(f"--- Proxy Refresh Test ({refresh_test_count}x, interval {refresh_interval}s) ---")
 
                 # 等待页面完全渲染后再开始刷新
@@ -403,7 +409,12 @@ async def playwright_browser(
                 for i in range(refresh_test_count):
                     t0 = time.monotonic()
                     try:
-                        await page.reload(wait_until="networkidle", timeout=15000)
+                        await page.reload(wait_until="load", timeout=15000)
+                        # 尽力等 networkidle，超时不报错，interval 兜底
+                        try:
+                            await page.wait_for_load_state("networkidle", timeout=2_000)
+                        except Exception:
+                            pass
                         elapsed = time.monotonic() - t0
                         refresh_times.append(elapsed)
                         print(f"  [{i+1:2d}] OK  {elapsed:.2f}s")
