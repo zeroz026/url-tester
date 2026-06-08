@@ -151,13 +151,14 @@ def validate_config(cfg):
         if not isinstance(value, str):
             raise ConfigError(f"browser.{field_name} must be a string")
 
-    viewport = browser_cfg.get("viewport", {"width": 1280, "height": 720})
-    if not isinstance(viewport, dict):
-        raise ConfigError("browser.viewport must be an object")
-    for dimension in ("width", "height"):
-        value = viewport.get(dimension)
-        if not _is_positive_int(value):
-            raise ConfigError(f"browser.viewport.{dimension} must be a positive integer")
+    viewport = browser_cfg.get("viewport")
+    if viewport is not None:
+        if not isinstance(viewport, dict):
+            raise ConfigError("browser.viewport must be an object")
+        for dimension in ("width", "height"):
+            value = viewport.get(dimension)
+            if not _is_positive_int(value):
+                raise ConfigError(f"browser.viewport.{dimension} must be a positive integer")
 
 
 def build_proxies(cfg):
@@ -281,7 +282,7 @@ async def playwright_browser(
     stealth_enabled = browser_cfg.get("stealth", False)
     locale = browser_cfg.get("locale", "")
     timezone_id = browser_cfg.get("timezone_id", "")
-    viewport = browser_cfg.get("viewport", {"width": 1280, "height": 720})
+    viewport = browser_cfg.get("viewport")
 
     proxy = build_playwright_proxy(cfg)
 
@@ -342,7 +343,9 @@ async def playwright_browser(
                 args=launch_args,
             )
 
-            context_kwargs = {"viewport": viewport}
+            context_kwargs = {}
+            if viewport:
+                context_kwargs["viewport"] = viewport
             if proxy:
                 context_kwargs["proxy"] = proxy
 
