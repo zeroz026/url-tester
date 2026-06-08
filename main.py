@@ -115,6 +115,10 @@ def validate_config(cfg):
             except ValueError as exc:
                 raise ConfigError(str(exc)) from exc
 
+        refresh_test_count = section.get("refresh_test_count", 0)
+        if not isinstance(refresh_test_count, int) or isinstance(refresh_test_count, bool) or refresh_test_count < 0:
+            raise ConfigError(f"{section_name}.refresh_test_count must be a non-negative integer")
+
     browser_cfg = cfg.get("browser", {})
     if browser_cfg is None:
         browser_cfg = {}
@@ -380,6 +384,26 @@ async def playwright_browser(
                 }""")
                 for k, v in stealth_report.items():
                     print(f"  {k}: {v}")
+                print()
+
+            refresh_test_count = cfg.get("playwright", {}).get("refresh_test_count", 0)
+            if refresh_test_count > 0:
+                import time
+                print(f"--- Proxy Refresh Test ({refresh_test_count}x) ---")
+                refresh_times = []
+                for i in range(refresh_test_count):
+                    t0 = time.monotonic()
+                    try:
+                        await page.reload(wait_until="load", timeout=15000)
+                        elapsed = time.monotonic() - t0
+                        refresh_times.append(elapsed)
+                        print(f"  [{i+1:2d}] OK  {elapsed:.2f}s")
+                    except Exception as e:
+                        elapsed = time.monotonic() - t0
+                        print(f"  [{i+1:2d}] FAIL after {elapsed:.2f}s: {e}")
+                if refresh_times:
+                    avg = sum(refresh_times) / len(refresh_times)
+                    print(f"  avg: {avg:.2f}s  min: {min(refresh_times):.2f}s  max: {max(refresh_times):.2f}s  success: {len(refresh_times)}/{refresh_test_count}")
                 print()
 
             print("按 Enter 键关闭浏览器并退出...")

@@ -33,6 +33,7 @@ playwright install chromium
 | `requests.url` | HTTP 请求目标 URL |
 | `playwright.enabled` | 是否执行 Playwright 浏览器步骤 (true/false) |
 | `playwright.url` | Playwright 浏览器目标 URL |
+| `playwright.refresh_test_count` | 页面加载后自动刷新 N 次测试代理稳定性，0 关闭（默认） |
 | `requests.proxy.enabled` | 是否为 HTTP 请求启用代理 (true/false) |
 | `requests.proxy.server` | HTTP 请求代理地址，例如 `http://127.0.0.1:8080` 或 `socks5://127.0.0.1:1080` |
 | `playwright.proxy.enabled` | 是否为 Playwright 浏览器启用代理 (true/false) |
