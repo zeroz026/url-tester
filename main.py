@@ -359,7 +359,10 @@ async def playwright_browser(
             print(f"当前 URL     : {page.url}")
             print()
             print("按 Enter 键关闭浏览器并退出...")
-            await asyncio.to_thread(wait_for_input)
+            try:
+                await asyncio.to_thread(wait_for_input)
+            except EOFError:
+                print("(非交互式环境，自动退出)")
         finally:
             if context is not None:
                 await context.close()
