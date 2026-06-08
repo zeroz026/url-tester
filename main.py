@@ -80,9 +80,21 @@ def validate_config(cfg):
     if not isinstance(cfg, dict):
         raise ConfigError("config must be a JSON object")
 
-    url = cfg.get("url")
-    if not isinstance(url, str) or not url.strip():
-        raise ConfigError("url must be a non-empty string")
+    for section_name in ("requests", "playwright"):
+        section = cfg.get(section_name, {})
+        if section is None:
+            section = {}
+        if not isinstance(section, dict):
+            raise ConfigError(f"{section_name} must be an object")
+
+        enabled = section.get("enabled", True)
+        if not isinstance(enabled, bool):
+            raise ConfigError(f"{section_name}.enabled must be a boolean")
+
+        if enabled:
+            url = section.get("url", "")
+            if not isinstance(url, str) or not url.strip():
+                raise ConfigError(f"{section_name}.url must be a non-empty string when enabled")
 
     proxy_cfg = cfg.get("proxy", {})
     if proxy_cfg is None:
@@ -378,15 +390,23 @@ async def playwright_browser(
 async def main():
     cfg = load_config()
     validate_config(cfg)
-    url = cfg["url"]
+
+    requests_cfg = cfg.get("requests", {})
+    playwright_cfg = cfg.get("playwright", {})
     browser_cfg = cfg.get("browser", {})
 
     # ====== 任务 1: HTTP 请求（requests） ======
-    proxies = build_proxies(cfg)
-    http_request(url, proxies)
+    if requests_cfg.get("enabled", True):
+        proxies = build_proxies(cfg)
+        http_request(requests_cfg["url"], proxies)
+    else:
+        print("[skip] HTTP 请求（requests）已禁用")
 
-    # ====== 任务 2: Playwright 浏览器（async，不依赖 greenlet） ======
-    await playwright_browser(url, cfg, browser_cfg)
+    # ====== 任务 2: Playwright 浏览器（async） ======
+    if playwright_cfg.get("enabled", True):
+        await playwright_browser(playwright_cfg["url"], cfg, browser_cfg)
+    else:
+        print("[skip] Playwright 浏览器已禁用")
 
 
 if __name__ == "__main__":

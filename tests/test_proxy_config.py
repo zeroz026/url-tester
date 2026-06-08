@@ -69,12 +69,13 @@ class ProxyConfigTests(unittest.TestCase):
             build_playwright_proxy(cfg)
 
     def test_validate_config_rejects_missing_url(self):
-        with self.assertRaisesRegex(ConfigError, "url must be a non-empty string"):
-            validate_config({})
+        with self.assertRaisesRegex(ConfigError, "requests.url must be a non-empty string"):
+            validate_config({"requests": {"enabled": True, "url": ""}})
 
     def test_validate_config_rejects_invalid_viewport(self):
         cfg = {
-            "url": "https://example.com",
+            "requests": {"enabled": True, "url": "https://example.com"},
+            "playwright": {"enabled": True, "url": "https://example.com"},
             "browser": {"viewport": {"width": 1280, "height": "720"}},
         }
 

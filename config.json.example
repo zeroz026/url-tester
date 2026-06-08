@@ -1,5 +1,12 @@
 {
-    "url": "https://httpbin.org/ip",
+    "requests": {
+        "enabled": true,
+        "url": "https://httpbin.org/ip"
+    },
+    "playwright": {
+        "enabled": true,
+        "url": "https://httpbin.org/headers"
+    },
     "proxy": {
         "requests": {
             "enabled": false,

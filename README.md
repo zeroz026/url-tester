@@ -29,7 +29,10 @@ playwright install chromium
 
 | 字段 | 说明 |
 |------|------|
-| `url` | 目标 URL |
+| `requests.enabled` | 是否执行 HTTP 请求步骤 (true/false) |
+| `requests.url` | HTTP 请求目标 URL |
+| `playwright.enabled` | 是否执行 Playwright 浏览器步骤 (true/false) |
+| `playwright.url` | Playwright 浏览器目标 URL |
 | `proxy.requests.enabled` | 是否为 `requests` 请求启用代理 (true/false) |
 | `proxy.requests.server` | `requests` 代理地址，例如 `http://127.0.0.1:8080` 或 `socks5://127.0.0.1:1080` |
 | `proxy.playwright.enabled` | 是否为 Playwright 浏览器启用代理 (true/false) |
@@ -47,8 +50,15 @@ playwright install chromium
 
 ```json
 {
-    "url": "https://httpbin.org/ip",
-    "proxy": { ... },
+    "requests": {
+        "enabled": true,
+        "url": "https://httpbin.org/ip"
+    },
+    "playwright": {
+        "enabled": true,
+        "url": "https://httpbin.org/headers"
+    },
+    "proxy": { },
     "browser": {
         "channel": "chromium",
         "headless": false,
@@ -81,7 +91,7 @@ python main.py
 
 ## 做了什么
 
-脚本按顺序执行两个任务：
+按配置顺序执行，每个步骤可独立开关：
 
-1. **HTTP 请求** — `requests` 库发起 GET，打印响应头和响应体
-2. **Playwright 浏览器** — 打开浏览器，开启 DevTools，导航到目标 URL。按 Enter 关闭浏览器退出
+1. **HTTP 请求** — `requests.enabled: true` 时，`requests` 库对 `requests.url` 发起 GET，打印响应头和响应体
+2. **Playwright 浏览器** — `playwright.enabled: true` 时，打开浏览器导航到 `playwright.url`。按 Enter 关闭浏览器退出
