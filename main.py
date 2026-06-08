@@ -362,7 +362,12 @@ async def playwright_browser(
             try:
                 await asyncio.to_thread(wait_for_input)
             except EOFError:
-                print("(非交互式环境，自动退出)")
+                print("(非交互式环境，浏览器保持打开，按 Ctrl+C 退出)")
+                try:
+                    while True:
+                        await asyncio.sleep(60)
+                except KeyboardInterrupt:
+                    print()
         finally:
             if context is not None:
                 await context.close()
