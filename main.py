@@ -338,29 +338,6 @@ async def playwright_browser(
                 args=launch_args,
             )
 
-            if devtools:
-                # DevTools 默认勾选 Preserve log，写在 user-data-dir 的 Preferences 中
-                import glob as _glob
-                user_data_dirs = sorted(
-                    _glob.glob("/tmp/playwright_chromiumdev_profile-*"),
-                    key=os.path.getmtime,
-                    reverse=True,
-                )
-                if user_data_dirs:
-                    prefs_dir = os.path.join(user_data_dirs[0], "Default")
-                    os.makedirs(prefs_dir, exist_ok=True)
-                    prefs_path = os.path.join(prefs_dir, "Preferences")
-                    prefs = {}
-                    if os.path.exists(prefs_path):
-                        with open(prefs_path, "r") as _f:
-                            try:
-                                prefs = json.load(_f)
-                            except Exception:
-                                pass
-                    prefs.setdefault("devtools", {}).setdefault("preferences", {})["network_log.preserve-log"] = "true"
-                    with open(prefs_path, "w") as _f:
-                        json.dump(prefs, _f)
-
             context_kwargs = {"viewport": viewport}
             if proxy:
                 context_kwargs["proxy"] = proxy
