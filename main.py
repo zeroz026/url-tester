@@ -363,6 +363,25 @@ async def playwright_browser(
             print(f"当前页面标题: {await page.title()}")
             print(f"当前 URL     : {page.url}")
             print()
+
+            if stealth_enabled:
+                print("--- Stealth Check ---")
+                stealth_report = await page.evaluate("""() => {
+                    return {
+                        'navigator.webdriver': navigator.webdriver,
+                        'navigator.plugins': Array.from(navigator.plugins).map(p => p.name),
+                        'navigator.plugins.length': navigator.plugins.length,
+                        'navigator.languages': navigator.languages,
+                        'navigator.hardwareConcurrency': navigator.hardwareConcurrency,
+                        'navigator.vendor': navigator.vendor,
+                        'navigator.platform': navigator.platform,
+                        'chrome': typeof chrome !== 'undefined' ? Object.keys(chrome) : null,
+                    }
+                }""")
+                for k, v in stealth_report.items():
+                    print(f"  {k}: {v}")
+                print()
+
             print("按 Enter 键关闭浏览器并退出...")
             try:
                 await asyncio.to_thread(wait_for_input)
