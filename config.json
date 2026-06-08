@@ -15,6 +15,9 @@
         "executable_path": "",
         "headless": false,
         "devtools": true,
+        "stealth": true,
+        "locale": "en-US",
+        "timezone_id": "America/New_York",
         "viewport": {
             "width": 1280,
             "height": 720

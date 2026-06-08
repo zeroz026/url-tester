@@ -121,6 +121,15 @@ def validate_config(cfg):
         if not isinstance(value, bool):
             raise ConfigError(f"browser.{field_name} must be a boolean")
 
+    stealth = browser_cfg.get("stealth", False)
+    if not isinstance(stealth, bool):
+        raise ConfigError("browser.stealth must be a boolean")
+
+    for field_name in ("locale", "timezone_id"):
+        value = browser_cfg.get(field_name, "")
+        if not isinstance(value, str):
+            raise ConfigError(f"browser.{field_name} must be a string")
+
     viewport = browser_cfg.get("viewport", {"width": 1280, "height": 720})
     if not isinstance(viewport, dict):
         raise ConfigError("browser.viewport must be an object")
@@ -248,6 +257,9 @@ async def playwright_browser(
     executable_path = browser_cfg.get("executable_path", "")
     headless = browser_cfg.get("headless", False)
     devtools = browser_cfg.get("devtools", True)
+    stealth_enabled = browser_cfg.get("stealth", False)
+    locale = browser_cfg.get("locale", "")
+    timezone_id = browser_cfg.get("timezone_id", "")
     viewport = browser_cfg.get("viewport", {"width": 1280, "height": 720})
 
     proxy = build_playwright_proxy(cfg)
@@ -255,6 +267,7 @@ async def playwright_browser(
     print(f"Browser  : {executable_path if executable_path else channel}")
     print(f"Headless : {headless}")
     print(f"DevTools : {devtools}")
+    print(f"Stealth  : {stealth_enabled}")
     print(f"URL      : {url}")
     print(f"Proxy    : {proxy['server'] if proxy else 'None (direct)'}")
     print()
@@ -290,6 +303,16 @@ async def playwright_browser(
         if devtools and (channel in system_channels or channel == "chromium"):
             launch_args.append("--auto-open-devtools-for-tabs")
 
+        if stealth_enabled:
+            launch_args.extend([
+                "--disable-blink-features=AutomationControlled",
+                "--no-first-run",
+                "--no-default-browser-check",
+                "--disable-infobars",
+                "--disable-dev-shm-usage",
+                "--disable-component-extensions-with-background-pages",
+            ])
+
         try:
             browser = await browser_type.launch(
                 headless=headless,
@@ -302,7 +325,19 @@ async def playwright_browser(
             if proxy:
                 context_kwargs["proxy"] = proxy
 
+            if stealth_enabled:
+                if locale:
+                    context_kwargs["locale"] = locale
+                if timezone_id:
+                    context_kwargs["timezone_id"] = timezone_id
+
             context = await browser.new_context(**context_kwargs)
+
+            if stealth_enabled:
+                from playwright_stealth import Stealth
+                stealth_agent = Stealth()
+                await stealth_agent.apply_stealth_async(context)
+
             page = await context.new_page()
 
             # DevTools 需要时间初始化，先空白页让面板就绪，再导航

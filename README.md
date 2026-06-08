@@ -38,7 +38,28 @@ playwright install chromium
 | `browser.executable_path` | 浏览器可执行文件全路径，优先级高于 channel (为空则忽略) |
 | `browser.headless` | 无头模式 (true/false) |
 | `browser.devtools` | 打开开发者工具 (仅 chromium 内核) |
+| `browser.stealth` | 启用反检测隐身模式，注入 JS evasion 脚本 + Chrome 反自动化标志 (true/false) |
+| `browser.locale` | stealth 模式下模拟的地区语言，默认 `en-US`。中文环境填 `zh-CN` |
+| `browser.timezone_id` | stealth 模式下模拟的时区，默认 `America/New_York`。中文环境填 `Asia/Shanghai` |
 | `browser.viewport` | 窗口大小 `{"width": 1280, "height": 720}` |
+
+### 中文环境配置示例
+
+```json
+{
+    "url": "https://httpbin.org/ip",
+    "proxy": { ... },
+    "browser": {
+        "channel": "chromium",
+        "headless": false,
+        "devtools": true,
+        "stealth": true,
+        "locale": "zh-CN",
+        "timezone_id": "Asia/Shanghai",
+        "viewport": { "width": 1280, "height": 720 }
+    }
+}
+```
 
 ## 执行
 
