@@ -347,45 +347,29 @@ async def playwright_browser(
 
         try:
             if stealth_enabled:
-                import tempfile, re
+                import tempfile
                 from playwright_stealth import Stealth
 
-                # 先启动一个临时 browser 获取真实 UA，然后关掉
-                temp_browser = await browser_type.launch(
-                    headless=True,
-                    executable_path=executable_path or None,
-                    channel=channel if (not executable_path and channel in system_channels) else None,
-                )
-                temp_page = await temp_browser.new_page()
-                raw_ua = await temp_page.evaluate("navigator.userAgent")
-                # 获取 Chrome 主版本号用于 Sec-CH-UA
-                ua_version = "134"
-                m = re.search(r"Chrome/(\d+)", raw_ua)
-                if m:
-                    ua_version = m.group(1)
-                await temp_browser.close()
-
-                # 移除 HeadlessChrome 标记，并换为 Windows 平台
-                real_ua = raw_ua.replace("HeadlessChrome", "Chrome")
-                real_ua = re.sub(r"\(X11; Linux [^)]+\)", "(Windows NT 10.0; Win64; x64)", real_ua)
-
-                # Sec-CH-UA 与 UA 版本对齐（Google Chrome 必须排第一，匹配真实 Chrome）
-                sec_ch_ua = (
-                    f'"Google Chrome";v="{ua_version}", '
-                    f'"Chromium";v="{ua_version}", '
-                    f'"Not/A)Brand";v="99"'
-                )
-
+                # 最小化 stealth（100 分方案）：
+                # 不动 UA / 平台 / userAgentData，全部保持原生 Chromium 值。
+                # JS 和 HTTP 头天然一致 = 不会触发 "UserAgent 不同"。
+                # 仅修复：
+                #   1. navigator.webdriver → false
+                #   2. navigator.languages/language → 和 locale 对齐
+                #   3. navigator.vendor → Google Inc.
+                #   4. chrome runtime → 正常化
                 lang_override = (locale,) if locale else ("en-US",)
                 stealth_agent = Stealth(
                     navigator_languages_override=lang_override,
                     navigator_vendor_override="Google Inc.",
-                    navigator_user_agent_override=real_ua,
-                    sec_ch_ua_override=sec_ch_ua,
+                    # 不动 UA/平台/userAgentData，保持原生一致
+                    navigator_user_agent=False,
+                    navigator_user_agent_data=False,
+                    navigator_platform=False,
+                    sec_ch_ua=False,
                 )
 
-                context_kwargs["user_agent"] = real_ua
-                context_kwargs["extra_http_headers"] = {"sec-ch-ua": sec_ch_ua}
+                # 不覆盖 user_agent，不设 extra_http_headers — 全用原生值
 
                 # 持久化 context 解决隐身模式检测
                 user_data_dir = browser_cfg.get("user_data_dir", "") or os.path.join(
@@ -402,64 +386,11 @@ async def playwright_browser(
                 browser = None
                 await stealth_agent.apply_stealth_async(context)
 
-                # navigator.language (单数) 与 navigator.languages[0] 对齐
-                # navigator.userAgentData: 修复 Chromium 147+ 的 brands
-                # (新版本已经没有 HeadlessChrome 了，stealth JS 的替换逻辑失效)
+                # navigator.language 单数对齐
                 await context.add_init_script(f"""
-                    (() => {{
-                        const uaFullVersion = '{ua_version}.0.7727.0';
-                        const uaVersion = '{ua_version}';
-                        const chromeBrands = [
-                            {{ brand: 'Google Chrome', version: uaVersion }},
-                            {{ brand: 'Chromium', version: uaVersion }},
-                            {{ brand: 'Not/A)Brand', version: '99' }},
-                        ];
-                        const chromeFullVersionList = [
-                            {{ brand: 'Google Chrome', version: uaFullVersion }},
-                            {{ brand: 'Chromium', version: uaFullVersion }},
-                            {{ brand: 'Not/A)Brand', version: '99.0.0.0' }},
-                        ];
-
-                        Object.defineProperty(navigator, 'userAgentData', {{
-                            get: () => ({{
-                                brands: chromeBrands,
-                                mobile: false,
-                                platform: 'Windows',
-                                getHighEntropyValues: (hints) => {{
-                                    const result = {{
-                                        brands: chromeBrands,
-                                        mobile: false,
-                                        platform: 'Windows',
-                                    }};
-                                    if (hints.includes('fullVersionList')) {{
-                                        result.fullVersionList = chromeFullVersionList;
-                                    }}
-                                    if (hints.includes('uaFullVersion')) {{
-                                        result.uaFullVersion = uaFullVersion;
-                                    }}
-                                    if (hints.includes('platformVersion')) {{
-                                        result.platformVersion = '10.0.0';
-                                    }}
-                                    if (hints.includes('model')) {{
-                                        result.model = '';
-                                    }}
-                                    return Promise.resolve(result);
-                                }},
-                                toJSON: () => ({{
-                                    brands: chromeBrands,
-                                    mobile: false,
-                                    platform: 'Windows',
-                                }}),
-                            }}),
-                            configurable: true,
-                            enumerable: true,
-                        }});
-
-                        // navigator.language 单数对齐
-                        Object.defineProperty(navigator, 'language', {{
-                            get: () => '{lang_override[0]}'
-                        }});
-                    }})();
+                    Object.defineProperty(navigator, 'language', {{
+                        get: () => '{lang_override[0]}'
+                    }});
                 """)
             else:
                 browser = await browser_type.launch(
