@@ -10,6 +10,7 @@ if sys.platform == "win32":
 
 import asyncio
 import requests
+import tempfile
 
 
 REQUEST_TIMEOUT_SECONDS = 30
@@ -74,6 +75,25 @@ def _parse_proxy_url(raw, field_name="playwright.proxy.server"):
 
 def _is_positive_int(value):
     return isinstance(value, int) and not isinstance(value, bool) and value > 0
+
+
+def _set_devtools_dock_bottom(user_data_dir):
+    """在 Chrome 用户数据目录写入 DevTools dock 到底部的偏好设置"""
+    prefs_dir = os.path.join(user_data_dir, 'Default')
+    os.makedirs(prefs_dir, exist_ok=True)
+    prefs_file = os.path.join(prefs_dir, 'Preferences')
+    existing = {}
+    if os.path.exists(prefs_file):
+        try:
+            with open(prefs_file, 'r', encoding='utf-8') as f:
+                existing = json.load(f)
+        except (json.JSONDecodeError, IOError):
+            pass
+    existing.setdefault('devtools', {}).setdefault('preferences', {})
+    existing['devtools']['preferences']['currentDockState'] = '"bottom"'
+    existing['devtools']['preferences']['lastDockState'] = '"bottom"'
+    with open(prefs_file, 'w', encoding='utf-8') as f:
+        json.dump(existing, f, indent=2)
 
 
 def validate_config(cfg):
@@ -347,7 +367,6 @@ async def playwright_browser(
 
         try:
             if stealth_enabled:
-                import tempfile
                 from playwright_stealth import Stealth
 
                 # 最小化 stealth（100 分方案）：
@@ -368,6 +387,9 @@ async def playwright_browser(
                     navigator_platform=False,
                     navigator_platform_override=None,
                     sec_ch_ua=False,
+                    # 关闭 iframe.contentWindow 伪装 — 会干扰 Google Ads
+                    # 的 iframe 尺寸计算，导致 body 被撑到 4000px
+                    iframe_content_window=False,
                 )
 
                 # 不覆盖 user_agent，不设 extra_http_headers — 全用原生值
@@ -376,6 +398,8 @@ async def playwright_browser(
                 user_data_dir = browser_cfg.get("user_data_dir", "") or os.path.join(
                     tempfile.gettempdir(), "playwright_stealth_profile"
                 )
+                if devtools:
+                    _set_devtools_dock_bottom(user_data_dir)
                 context = await browser_type.launch_persistent_context(
                     user_data_dir=user_data_dir,
                     headless=headless,
@@ -394,13 +418,20 @@ async def playwright_browser(
                     }});
                 """)
             else:
-                browser = await browser_type.launch(
+                # 非 stealth 路径
+                # DevTools dock 偏好需要持久化 user_data_dir，使用 persistent context
+                user_data_dir = os.path.join(tempfile.gettempdir(), "playwright_default_profile")
+                if devtools:
+                    _set_devtools_dock_bottom(user_data_dir)
+                context = await browser_type.launch_persistent_context(
+                    user_data_dir=user_data_dir,
                     headless=headless,
                     executable_path=executable_path or None,
                     channel=channel if (not executable_path and channel in system_channels) else None,
                     args=launch_args,
+                    **context_kwargs,
                 )
-                context = await browser.new_context(**context_kwargs)
+                browser = None
 
             page = await context.new_page()
 
