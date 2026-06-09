@@ -366,6 +366,7 @@ async def playwright_browser(
                     navigator_user_agent=False,
                     navigator_user_agent_data=False,
                     navigator_platform=False,
+                    navigator_platform_override=None,
                     sec_ch_ua=False,
                 )
 
@@ -421,21 +422,69 @@ async def playwright_browser(
             print()
 
             if stealth_enabled:
-                print("--- Stealth Check ---")
-                stealth_report = await page.evaluate("""() => {
+                print("--- 指纹指标 ---")
+                fingerprint = await page.evaluate("""() => {
+                    const uad = navigator.userAgentData || {};
                     return {
-                        'navigator.webdriver': navigator.webdriver,
-                        'navigator.plugins': Array.from(navigator.plugins).map(p => p.name),
-                        'navigator.plugins.length': navigator.plugins.length,
-                        'navigator.languages': navigator.languages,
-                        'navigator.hardwareConcurrency': navigator.hardwareConcurrency,
-                        'navigator.vendor': navigator.vendor,
+                        // === 原生（Chromium 二进制决定）===
+                        'navigator.userAgent': navigator.userAgent,
                         'navigator.platform': navigator.platform,
+                        'navigator.appVersion': navigator.appVersion,
+                        'navigator.vendorSub': navigator.vendorSub,
+                        'navigator.product': navigator.product,
+                        'navigator.productSub': navigator.productSub,
+                        'userAgentData.brands': uad.brands ? JSON.stringify(uad.brands) : null,
+                        'userAgentData.platform': uad.platform || null,
+                        'userAgentData.mobile': uad.mobile,
+                        'navigator.hardwareConcurrency': navigator.hardwareConcurrency,
+                        'navigator.deviceMemory': navigator.deviceMemory || 'N/A',
+                        'screen.width': screen.width,
+                        'screen.height': screen.height,
+                        'screen.colorDepth': screen.colorDepth,
+                        'window.devicePixelRatio': window.devicePixelRatio,
+                        'navigator.plugins': Array.from(navigator.plugins).map(p => p.name),
+                        // === 配置（config.json 控制）===
+                        'navigator.language': navigator.language,
+                        'navigator.languages': navigator.languages,
+                        'timezone': Intl.DateTimeFormat().resolvedOptions().timeZone,
+                        // === Stealth（playwright_stealth 修改）===
+                        'navigator.webdriver': navigator.webdriver,
+                        'navigator.vendor': navigator.vendor,
                         'chrome': typeof chrome !== 'undefined' ? Object.keys(chrome) : null,
                     }
                 }""")
-                for k, v in stealth_report.items():
-                    print(f"  {k}: {v}")
+                # 标记每项的来源
+                tags = {
+                    # 原生
+                    'navigator.userAgent': '[原生]',
+                    'navigator.platform': '[原生]',
+                    'navigator.appVersion': '[原生]',
+                    'navigator.vendorSub': '[原生]',
+                    'navigator.product': '[原生]',
+                    'navigator.productSub': '[原生]',
+                    'userAgentData.brands': '[原生]',
+                    'userAgentData.platform': '[原生]',
+                    'userAgentData.mobile': '[原生]',
+                    'navigator.hardwareConcurrency': '[原生]',
+                    'navigator.deviceMemory': '[原生]',
+                    'screen.width': '[原生]',
+                    'screen.height': '[原生]',
+                    'screen.colorDepth': '[原生]',
+                    'window.devicePixelRatio': '[原生]',
+                    'navigator.plugins': '[原生]',
+                    # 配置
+                    'navigator.language': '[配置]',
+                    'navigator.languages': '[配置]',
+                    'timezone': '[配置]',
+                    # stealth
+                    'navigator.webdriver': '[stealth]',
+                    'navigator.vendor': '[stealth]',
+                    'chrome': '[stealth]',
+                }
+                max_key_len = max(len(k) for k in fingerprint.keys())
+                for k, v in fingerprint.items():
+                    tag = tags.get(k, '[???]')
+                    print(f"  {tag} {k:<{max_key_len}}  {v}")
                 print()
 
             refresh_test_count = cfg.get("playwright", {}).get("refresh_test_count", 0)
